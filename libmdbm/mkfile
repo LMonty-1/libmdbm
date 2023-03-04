@@ -1,0 +1,21 @@
+</$objtype/mkfile
+
+LIB=/$objtype/lib/libmdbm.a
+
+HFILES=mdbm.h os.h os.c
+OFILES=mdbm.$O
+
+UPDATE=mkfile\
+	/386/lib/libmdbm.a\
+	$HFILES\
+
+</sys/src/cmd/mksyslib
+
+CFLAGS=$CFLAGS -I.
+
+unix:V: unix.c unix.h
+	cp -x unix.c os.c
+	cp -x unix.h os.h
+plan9:V: plan9.c plan9.h
+	cp -x plan9.c os.c
+	cp -x plan9.h os.h

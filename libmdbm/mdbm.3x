@@ -1,0 +1,284 @@
+.TH MDBM 3X 
+.SH NAME
+mdbm: mdbmopen, mdbmfetch, mdbmstore, mdbmdelete, mdbmfirstkey, ... \- multiple-key, extensible-hashing data base subroutines
+.SH SYNOPSIS
+.nf
+.ft L
+#include <mdbm.h>
+typedef struct { char *dptr; int dsize; } datum;	/* in <mdbm.h> */
+typedef struct { unsigned short pagblksz, dirblksz; } Dbmparams; /* " */
+.sp 0.3v
+Dbm *mdbmopen(char *file, int omode, int perm, Dbmparams *dpp)
+.sp 0.3v
+datum mdbmfetch(Dbm *d, datum key)
+.sp 0.3v
+mdbmstore(Dbm *d, datum key, datum content, int replace)
+.sp 0.3v
+mdbmdelete(Dbm *d, datum key)
+.sp 0.3v
+datum mdbmfirstkey(Dbm *d)
+.sp 0.3v
+datum mdbmnextkey(Dbm *d, datum key)
+.sp 0.3v
+mdbmsync(Dbm *d)
+.sp 0.3v
+mdbmclose(Dbm *d)
+.sp 0.3v
+mdbmgetflags(Dbm *d, int flags)
+.sp 0.3v
+mdbmsetflags(Dbm *d, int flags)
+.sp 0.3v
+mdbmbisflags(Dbm *d, int flags)
+.sp 0.3v
+mdbmbicflags(Dbm *d, int flags)
+.SH DESCRIPTION
+These functions maintain key/content pairs in a database.
+The functions will handle very large (a billion blocks)
+databases and will usually access a keyed item in one or two file
+system accesses.
+This implementation uses extensible hashing.
+The functions are obtained with the loader option
+.BR \-lmdbm .
+.PP
+.IR Key s
+and
+.IR content s
+are described by the
+.I datum
+typedef, which is defined in the include file
+.IR mdbm.h .
+A
+.I datum
+specifies a string of
+.I dsize
+bytes pointed to by
+.I dptr.
+Arbitrary binary data, as well as normal text strings, are allowed.
+The database is stored in two files.  One file is a directory
+containing a bit map and has ``.dir'' as its suffix.  The second
+file contains all data (pages) and has ``.pag'' as its suffix.
+.PP
+Before a database can be accessed, it must be opened by
+.IR mdbmopen .
+The
+.I flags
+are simply passed to the open system call (see
+.IR open (2)).
+(This is not strictly true: if the read/write mode is O_WRONLY, it
+is converted internally to O_RDWR.)
+.PP
+The
+.I mode
+parameter is only used with
+.B O_CREAT
+when creating a new database.
+The value is merely passed to the
+.I open
+system call.
+If
+.B O_CREAT
+is not specified, the ``.dir'' and ``.pag'' files must exist.
+.I mdbmopen
+returns a pointer to the database for use by the other mdbm routines.
+If the database cannot be opened,
+.I mdbmopen
+returns NULL.
+.PP
+If
+.I dpp
+is non-null,
+it points to desired
+.I pag
+and
+.I dir
+block sizes of the database.
+On return,
+these variables will have been filled in with the actual sizes in use.
+(The values are only used when creating a database, but are always
+modified on return.)
+If the default sizes are acceptable,
+.I dpp
+may be 0.
+.PP
+Once open, the data stored under a key is accessed by
+.I mdbmfetch
+and data is placed under a key by
+.IR mdbmstore .
+A key (and its associated contents) is deleted by
+.IR mdbmdelete .
+A linear pass through all keys in a database
+may be made, in an (apparently) random order, by use of
+.I mdbmfirstkey
+and
+.IR mdbmnextkey .
+.I Mdbm_firstkey
+will return the first key in the database.
+With any key
+.I mdbmnextkey
+will return the next key in the database.
+This code will traverse the database d:
+.IP
+.RS
+.ft L
+for (key = mdbmfirstkey(d); key.dptr != NULL;
+     key = mdbmnextkey(d, key))
+.ft
+.RE
+.PP
+.I mdbmsync
+will complete any pending writes on the database.  (If the
+.B Mdbmimmwr
+flag has been set \- see
+.I mdbmsetflags
+below \- then no writes will be pending).
+In any case
+.I mdbmsync
+calls
+.I fsync
+on the
+.I dir
+and
+.I pag
+file descriptors.
+.PP
+A database may be closed (and the associated storage and file
+descriptors released) with
+.IR mdbmclose .
+.PP
+Writable databases
+.I must
+be closed before exiting to ensure that all data are written.
+(To be precise, this is only necessary if the
+.B Mdbmimmwr
+flag was not on, and no
+.I mdbmsync
+has been done since the last
+.IR mdbmstore ).
+.PP
+The fourth parameter to store (``replace'') specifies what to
+do in the event of a key collision.  The value
+.B Mdbmnorepl
+(0) makes
+.I mdbmstore
+return the error value 1 in the event that the given key already
+points to a particular datum.
+The value
+.B Mdbmokrepl
+(actually your favorite nonzero value will do) tells
+store to go ahead and replace the old datum.
+.PP
+Various flags may be examined and set via
+.I mdbmgetflags
+and
+.IR mdbmsetflags .
+Currently they are:
+.TP
+.B Mdbmreadonly
+Indicates that a database was opened with O_RDONLY and cannot be written.
+.I (Store
+and friends return an error indication and set
+.B errno
+(see
+.IR intro(2) )
+to
+.B EPERM
+if they are asked to operate on a read-only database.)
+.TP
+.B Mdbmimmwr
+Specifies that all modifications to the database be written to the file system
+immediately (note that
+.IR fsync s
+are
+.I not
+done in this case).
+This might be useful for an interactive program,
+to reduce the chances of loss of data in the event of a system crash.
+This is currently the only user-settable flag.
+.PP
+.I Mdbmsetflags
+sets the user-settable flags to its second argument.
+.I Mdbmgetflags
+returns all the flags in the database.
+.I Mdbm_bisflags
+turns on the indicated user-settable flags, and
+.I mdbmbicflags
+turns off the indicated user-settable flags.
+E.g., the C statement
+.IP
+.B mdbmbisflags(d, Mdbmimmwr);
+.PP
+would turn on the immediate-write flag.
+.SS "Multiple Keys"
+The database routines invisibly keep track of how many keys are pointing
+to a particular datum, and ensure that the datum itself is not removed
+until it is no longer in use.  In fact, a datum may also be used as a key.
+Thus there is no storage penalty for having many keys that point to one
+datum or even to themselves.
+.PP
+The implementation of this involved changing the underlying structure
+of the database.
+Keys and data are no longer stored in pairs; instead,
+each data block contains an arbitrary number of items each with
+incoming and outgoing link indicies.
+In addition to breaking anything
+that depended on the old implementation, this means that in most cases
+two file system accesses are required to fetch a particular datum given
+a key (one to find the key and another to find its datum).
+.SH DIAGNOSTICS
+All functions that return an
+.I int
+indicate errors with negative values.
+A zero return indicates OK.
+Routines that return a
+.I datum
+indicate errors with a NULL (0)
+.IR dptr .
+.I mdbmopen
+returns NULL on error.
+.SH "SEE ALSO"
+.IR dbm (3)
+.SH HISTORY
+Ken Thompson wrote the original
+.I dbm
+code that appeared in Research UNIX, Seventh Edition.
+Chris Torek modified it to handle multiple databases, changed the internal
+format to support multiple keys, and added anything
+that you see here and not in
+.IR dbm (3).
+Geoff Collyer adapted
+.I mdbm
+to Plan 9 and arranged that binary integers are stored in big-endian byte order
+on disk, thus making the database files portable across architectures.
+.SH BUGS
+The ``.dat'' file will contain holes so that its apparent size is
+(usually) two to four times its actual content.
+Older UNIX systems
+may create real file blocks for these holes when touched.
+These files cannot be copied by normal means (cp, cat, tp, tar, ar)
+without filling in the holes.
+.PP
+.I Dptr
+pointers returned by these subroutines
+point into static storage that is changed by subsequent calls.
+.PP
+The previously undocumented
+.I forder
+function is defunct.
+(It used to return the block number given a key.)
+.PP
+The size of a key or content string must not exceed the
+.I pag
+block size set when creating the database.
+Moreover, all strings that hash together must fit on a single block.
+.I Mdbm_store
+will return an error in the event that a block fills with inseparable data.
+.PP
+.I Mdbm_delete
+does not physically reclaim file space,
+although it does make it available for reuse.
+.PP
+The order of keys presented by
+.I mdbmfirstkey
+and
+.I mdbmnextkey
+depends on a hashing function, not on anything interesting.
